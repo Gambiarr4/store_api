@@ -1,7 +1,7 @@
 from typing import List
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, status, Query
 from pydantic import UUID4
-from store.core.exceptions import NotFoundException
+from store.core.exceptions import NotFoundException, ProductNotFoundError
 
 from store.schemas.product import ProductIn, ProductOut, ProductUpdate, ProductUpdateOut
 from store.usecases.product import ProductUsecase
@@ -13,7 +13,13 @@ router = APIRouter(tags=["products"])
 async def post(
     body: ProductIn = Body(...), usecase: ProductUsecase = Depends()
 ) -> ProductOut:
-    return await usecase.create(body=body)
+    try:
+        return await usecase.create(body=body)
+    except ProductAlreadyExistsError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Product with this name already exists"
+        )
 
 
 @router.get(path="/{id}", status_code=status.HTTP_200_OK)
@@ -27,8 +33,11 @@ async def get(
 
 
 @router.get(path="/", status_code=status.HTTP_200_OK)
-async def query(usecase: ProductUsecase = Depends()) -> List[ProductOut]:
-    return await usecase.query()
+async def query(
+    min_price: float = Query(None, alias="price_gt"),
+    max_price: float = Query(None, alias="price_lt")
+    ) -> List[ProductOut]:
+    return await usecase.query(min_price, max_price)
 
 
 @router.patch(path="/{id}", status_code=status.HTTP_200_OK)
@@ -37,7 +46,13 @@ async def patch(
     body: ProductUpdate = Body(...),
     usecase: ProductUsecase = Depends(),
 ) -> ProductUpdateOut:
-    return await usecase.update(id=id, body=body)
+    try:
+        return await usecase.update(id=id, body=body)
+    except ProductNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found"
+        )
 
 
 @router.delete(path="/{id}", status_code=status.HTTP_204_NO_CONTENT)
